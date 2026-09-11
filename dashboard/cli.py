@@ -146,6 +146,10 @@ def config_text() -> str:
         "unbind-key -n M-MouseDown3Status",
         "unbind-key -n M-MouseDown3StatusLeft",
         "unbind-key -n M-MouseDown3StatusRight",
+        "unbind-key -q -n C-MouseDown1Pane",
+        "unbind-key -q -n C-MouseDown1Status",
+        "if-shell -F '#{>=:#{version},3.7}' 'unbind-key -q -n MouseDown1Control8'",
+        "if-shell -F '#{>=:#{version},3.7}' 'unbind-key -q -n MouseDown1Control9'",
         "unbind-key -n WheelUpStatus",
         "unbind-key -n WheelDownStatus",
         "bind-key -n MouseDown1Status run-shell -b " + tmux_quote(click),
@@ -348,6 +352,12 @@ def toggle_terminal(session: str) -> None:
             layout = option(session, "layout")
             if layout:
                 tmux("select-layout", "-t", window, layout)
+            # Some tmux versions assign saved layout cells in pane-list order
+            # after join-pane. Restore role positions without restarting either PID.
+            terminal_left = int(tmux("display-message", "-p", "-t", pane, "#{pane_left}"))
+            monitor_left = int(tmux("display-message", "-p", "-t", right, "#{pane_left}"))
+            if terminal_left > monitor_left:
+                tmux("swap-pane", "-d", "-s", pane, "-t", right)
             tmux("select-window", "-t", window)
             tmux("select-pane", "-t", pane)
             set_option(session, "hidden", "0")
