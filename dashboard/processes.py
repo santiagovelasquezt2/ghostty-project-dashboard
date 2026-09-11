@@ -13,6 +13,8 @@ from textual.containers import Grid, Horizontal
 from textual.widgets import Button, DataTable, Input, Static
 
 from . import processdata
+from .process_details import ProcessDetails, ProcessTable
+from dataclasses import replace
 from .gitdata import display_path
 
 
@@ -138,8 +140,11 @@ class ProcessMonitor(App[None]):
     #actions Button:hover { background: #25303e; color: #d6e6ff; }
     """
     BINDINGS = [
+        Binding("a", "cpu", "CPU", show=False),
         Binding("c", "cpu", "CPU", show=False),
         Binding("m", "memory", "Memory", show=False),
+        Binding("d", "memory", "Memory", show=False),
+        Binding("s", "gpu", "GPU", show=False),
         Binding("g", "gpu", "GPU", show=False),
         Binding("slash", "filter", "Filter", show=False),
         Binding("escape", "clear_filter", "Clear filter", show=False),
@@ -150,8 +155,11 @@ class ProcessMonitor(App[None]):
         super().__init__()
         if initial_view not in ("cpu", "gpu", "memory"):
             raise ValueError("Process view must be 'cpu', 'gpu', or 'memory'.")
+        self._details_open = False
         self.poll_enabled = auto_refresh
         self.metric_name = initial_view
+        self.sort_key = initial_view
+        self._reset_ranking = False
         self.process_snapshot: Any = None
         self.filter_query = ""
         self._refresh_running = False
@@ -175,7 +183,7 @@ class ProcessMonitor(App[None]):
             yield Button("Memory", id="memory", classes="selected" if self.metric_name == "memory" else "")
         yield Input(placeholder="Filter process names…", id="filter")
         yield Static("Reading processes…", id="note", markup=False)
-        yield DataTable(id="process-table", cursor_type="row", show_row_labels=False,
+        yield ProcessTable(id="process-table", cursor_type="row", show_row_labels=False,
                         cursor_foreground_priority="renderable", cell_padding=1)
         yield Static("Reading processes…", id="empty", markup=False)
         yield Static("", id="detail", markup=False)
@@ -195,14 +203,14 @@ class ProcessMonitor(App[None]):
             self.set_interval(2, self.reload_data)
 
     def on_resize(self, event: events.Resize) -> None:
-        if self.is_mounted:
+        if self.is_mounted and not self._details_open:
             self.query_one("#memory", Button).label = "Mem" if event.size.width < 25 else "Memory"
             self.query_one("#actions").set_class(event.size.width < 30, "narrow")
             self.call_after_refresh(self._render_processes)
 
     @work(group="process-snapshot", exit_on_error=False)
     async def reload_data(self) -> None:
-        if self._refresh_running:
+        if self._refresh_running or self._details_open:
             return
         self._refresh_running = True
         try:
@@ -216,6 +224,8 @@ class ProcessMonitor(App[None]):
             self._refresh_running = False
 
     def apply_snapshot(self, value: Any) -> None:
+        if self._details_open:
+            return
         previous = self.process_snapshot
         self._first_cpu_measurement = bool(previous is not None and previous.cpu_percent is None and value.cpu_percent is not None)
         self.process_snapshot = value
@@ -235,7 +245,7 @@ class ProcessMonitor(App[None]):
         columns = [metric]
         if width >= 42:
             if self.metric_name == "gpu":
-                columns.append(("GPU time", "gpu_time", 9))
+                columns.append(("GPU time", "gpu_time", 10))
             else:
                 columns.append(("CPU%", "cpu", 6) if self.metric_name == "memory" else ("RAM", "memory", 7))
         if width >= 30:
@@ -245,6 +255,8 @@ class ProcessMonitor(App[None]):
         return [("Process", "name", name_width), *columns]
 
     def _render_processes(self) -> None:
+        if self._details_open:
+            return
         snap = self.process_snapshot
         if snap is None:
             return
@@ -262,14 +274,10 @@ class ProcessMonitor(App[None]):
         if self.metric_name == "gpu":
             eligible = [item for item in snap.processes if item.gpu is not None or item.gpu_time_ns is not None]
         processes = [item for item in eligible if self.filter_query.casefold() in item.name.casefold()]
-        if self.metric_name == "gpu":
-            processes.sort(key=lambda item: (
-                item.gpu is None, -(item.gpu if item.gpu is not None else 0),
-                -(item.gpu_time_ns or 0), item.name.casefold(), item.pid,
-            ))
-        else:
-            metric = lambda item: item.memory_bytes if self.metric_name == "memory" else item.cpu
-            processes.sort(key=lambda item: (-metric(item), item.name.casefold(), item.pid))
+        def value(item):
+            return {"cpu": item.cpu, "memory": item.memory_bytes, "gpu": item.gpu,
+                    "gpu_time": item.gpu_time_ns, "pid": item.pid}.get(self.sort_key)
+        processes.sort(key=lambda item: (value(item) is None, -(value(item) or 0), item.name.casefold(), item.pid))
         count = f"{len(processes)} of {len(eligible)}" if self.filter_query else str(len(processes))
         note = f"{count} processes"
         if self.metric_name == "cpu":
@@ -284,7 +292,7 @@ class ProcessMonitor(App[None]):
             else "No process measurements are available yet."
         ))
         columns = self._columns()
-        signature = (self.metric_name, tuple(columns), self.filter_query,
+        signature = (self.metric_name, self.sort_key, tuple(columns), self.filter_query,
                      tuple((item.pid, item.name, item.cpu, item.memory_bytes, item.gpu, item.gpu_time_ns) for item in processes))
         if signature == self._view_signature:
             return
@@ -292,15 +300,16 @@ class ProcessMonitor(App[None]):
         selected_pid = self.selected_pid()
         scroll = (table.scroll_x, table.scroll_y)
         old_row = table.cursor_row
-        if self._first_cpu_measurement and self.metric_name == "cpu":
+        if self._reset_ranking or (self._first_cpu_measurement and self.metric_name == "cpu"):
             # The first sample cannot measure CPU yet. Begin the live ranking
             # at its top instead of anchoring the initial alphabetical row.
             selected_pid, scroll, old_row = None, (0.0, 0.0), 0
             self._first_cpu_measurement = False
+            self._reset_ranking = False
         if self._column_spec != columns:
             table.clear(columns=True)
             for label, key, width in columns:
-                table.add_column(Text(label, style=MUTED), width=width, key=key)
+                table.add_column(Text(label + (" ↓" if key == self.sort_key else ""), style=MUTED), width=width, key=key)
             self._column_spec = columns
             self._row_values.clear()
         present = {str(item.pid) for item in processes}
@@ -362,10 +371,32 @@ class ProcessMonitor(App[None]):
                 detail.tooltip = None
             detail.update(text)
 
+    @on(ProcessTable.Inspect)
+    def inspect_process(self, event: ProcessTable.Inspect) -> None:
+        item = self._process_lookup.get(event.pid)
+        if item is not None and not self._details_open:
+            self._details_open = True
+            self.push_screen(ProcessDetails(replace(item)), self._closed_details)
+
+    def _closed_details(self, result=None) -> None:
+        self._details_open = False
+        self.query_one(DataTable).focus()
+
     @on(DataTable.RowHighlighted)
     def highlighted(self, event: DataTable.RowHighlighted) -> None:
         if event.row_key.value:
             self._show_detail(int(event.row_key.value))
+
+    @on(DataTable.HeaderSelected)
+    def sort_column(self, event: DataTable.HeaderSelected) -> None:
+        key = event.column_key.value
+        if key in ("cpu", "memory", "gpu", "gpu_time", "pid"):
+            self.sort_key = key
+            self._reset_ranking = True
+            self._column_spec = None
+            self._view_signature = None
+            self._render_processes()
+            self.query_one(DataTable).scroll_home(animate=False)
 
     @on(Button.Pressed, "#cpu")
     def action_cpu(self) -> None:
@@ -381,6 +412,9 @@ class ProcessMonitor(App[None]):
 
     def _set_metric(self, metric: str) -> None:
         self.metric_name = metric
+        self.sort_key = metric
+        self._reset_ranking = True
+        self._column_spec = None
         for name in ("cpu", "memory", "gpu"):
             self.query_one("#" + name, Button).set_class(name == metric, "selected")
         self._render_processes()

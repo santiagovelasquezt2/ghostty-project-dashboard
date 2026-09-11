@@ -55,3 +55,5 @@ After changing dependencies, update `uv.lock` with `uv lock`, review it, and rer
 | Process table and filters | `dashboard/processes.py` |
 | Right column and btop/compact fallback | `dashboard/resource_stack.py`, `dashboard/resource_graphs.py` |
 | Installation | `install.py` |
+
+Preview formatting uses `formatter/format.mjs` and pinned Prettier. Install it with `npm ci --prefix formatter --ignore-scripts` before tests. Never run project formatting scripts or write formatted content to a project; compare in-memory versions only.

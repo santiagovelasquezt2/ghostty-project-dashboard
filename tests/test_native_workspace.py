@@ -106,6 +106,63 @@ class NativeWorkspaceTests(unittest.TestCase):
     def client_ttys(self, view):
         return set(cli.tmux("list-clients", "-t", view, "-F", "#{client_tty}", check=False).splitlines())
 
+    def test_top_slot_native_migration_and_switch_preserve_processes(self):
+        from dashboard import top_section
+        workspace.prepare(self.session)
+        state = self.native_state()
+        workspace.write_state(self.session, state)
+        before = self.pane_processes()
+        with patch.object(native, "add_top", return_value="top-id") as add:
+            updated = top_section.ensure_native(self.session)
+            self.assertEqual(updated["terminals"]["top"], "top-id")
+            self.assertEqual(updated["origin"], state["origin"])
+            self.assertEqual(updated["generation"], state["generation"])
+            top_section.ensure_native(self.session)
+            add.assert_called_once()
+        self.assertEqual(len(self.geometry()), 1)
+        view = cli.option(self.session, "view_top")
+        slot = self.selected_window(view)
+        with patch.object(cli, "command", return_value="/bin/sleep 600"):
+            top_section.toggle(self.session)
+        notes = cli.option(self.session, "notes")
+        notes_pid = cli.tmux("display-message", "-p", "-t", notes, "#{pane_pid}")
+        self.assertEqual(cli.option(self.session, "top_mode"), "notes")
+        self.assertEqual(cli.tmux("display-message", "-p", "-t", notes, "#{window_id}"), slot)
+        top_section.toggle(self.session)
+        self.assertEqual(cli.option(self.session, "top_mode"), "commits")
+        self.assertEqual(cli.tmux("display-message", "-p", "-t", self.roles["commits"], "#{window_id}"), slot)
+        self.assertEqual(cli.tmux("display-message", "-p", "-t", notes, "#{pane_pid}"), notes_pid)
+        self.assertEqual(before, self.pane_processes())
+        workspace.restore_tmux(self.session)
+        self.assertEqual(len(self.geometry()), 4)
+        self.assertEqual(before, self.pane_processes())
+
+    def test_top_creation_failure_restores_original_left_layout(self):
+        from dashboard import top_section
+        workspace.prepare(self.session)
+        workspace.write_state(self.session, self.native_state())
+        before, layout = self.pane_processes(), self.geometry()
+        with patch.object(native, "add_top", side_effect=RuntimeError("mock failure")):
+            with self.assertRaisesRegex(RuntimeError, "mock failure"):
+                top_section.ensure_native(self.session)
+        self.assertEqual(before, self.pane_processes())
+        self.assertEqual(layout, self.geometry())
+
+    def test_tmux_notes_swap_preserves_slot_size_and_coding_toggle(self):
+        from dashboard import top_section
+        before = self.pane_processes()
+        original = self.geometry()
+        with patch.object(cli, "command", return_value="/bin/sleep 600"):
+            top_section.toggle(self.session)
+        notes = cli.option(self.session, "notes")
+        self.assertEqual(self.geometry()[notes], original[self.roles["commits"]])
+        self.assertEqual(self.geometry()[self.roles["files"]], original[self.roles["files"]])
+        cli.toggle_terminal(self.session)
+        cli.toggle_terminal(self.session)
+        top_section.toggle(self.session)
+        self.assertEqual(original, self.geometry())
+        self.assertEqual(before, self.pane_processes())
+
     def test_prepare_restore_preserves_every_process_and_custom_layout(self):
         cli.tmux("resize-pane", "-t", self.roles["files"], "-y", "27")
         cli.tmux("resize-pane", "-t", self.roles["terminal"], "-x", "80")
@@ -311,6 +368,29 @@ class NativeWorkspaceTests(unittest.TestCase):
                 workspace.leave_workspace(self.session, expected_generation=state["generation"])
         self.assertEqual(workspace.read_state(self.session), state)
         self.assertEqual(before, self.pane_processes())
+
+    def test_notes_column_preserves_coding_and_origin(self):
+        workspace.prepare(self.session)
+        state = self.native_state(tty="/dev/origin")
+        workspace.write_state(self.session, state)
+        coding_pid = cli.tmux("display-message","-p","-t",self.roles["terminal"],"#{pane_pid}")
+        reply = self.native_state(mode=None)
+        reply["terminals"]["terminal"] = "notes-id"
+        with patch.object(cli,"command",return_value="/bin/sleep 600"), patch.object(native,"toggle",return_value=reply):
+            workspace.toggle_notes(self.session)
+        saved = workspace.read_state(self.session)
+        self.assertEqual(saved["terminals"]["terminal"], state["terminals"]["terminal"])
+        self.assertEqual(saved["terminals"]["notes"], "notes-id")
+        self.assertEqual(saved["origin"],state["origin"])
+        self.assertEqual(cli.option(self.session,"notes_hidden"),"0")
+        notes_pid = cli.tmux("display-message","-p","-t",cli.option(self.session,"notes"),"#{pane_pid}")
+        reply["terminals"]["terminal"] = ""
+        reply["hidden"] = True
+        with patch.object(native,"toggle",return_value=reply):
+            workspace.toggle_notes(self.session)
+        self.assertEqual(cli.option(self.session,"notes_hidden"),"1")
+        self.assertEqual(cli.tmux("display-message","-p","-t",self.roles["terminal"],"#{pane_pid}"),coding_pid)
+        self.assertEqual(cli.tmux("display-message","-p","-t",cli.option(self.session,"notes"),"#{pane_pid}"),notes_pid)
 
     def test_native_toggle_retains_origin_generation_and_hidden_metadata(self):
         workspace.prepare(self.session)

@@ -3,7 +3,8 @@
 Each native surface runs a tmux *client*. Closing the center surface must never
 kill its tmux session: the caller owns that persistent session. Ghostty's script
 API cannot read a surface's current font size or split dimensions, so recreating
-the center does not retain its manual font adjustment and equalizes the columns.
+the center does not retain its manual font adjustment. geometry.py restores
+column proportions using tmux viewport measurements.
 
 API reference: Ghostty.app/Contents/Resources/Ghostty.sdef (Ghostty 1.3.1).
 """
@@ -258,7 +259,17 @@ def _resolve_tab(window: str, tab: str, *, prefix: str = "dashboard") -> str:
 def _ownership_preflight(state: Mapping[str, Any]) -> str:
     """Check every surviving managed ID before allowing any close operation."""
     window, tab, left, center, monitor = _state_identifiers(state)
-    ids = ", ".join(_literal(value) for value in (left, center, monitor) if value)
+    notes = state.get("terminals", {}).get("notes", "")
+    if notes:
+        notes = _identifier(notes, label="Notes terminal identifier")
+        if notes in (left, center, monitor):
+            raise ValueError("Notes must have a distinct terminal identifier")
+    top = state.get("terminals", {}).get("top", "")
+    if top:
+        top = _identifier(top, label="Top terminal identifier")
+        if top in (left, center, monitor, notes):
+            raise ValueError("Top section must have a distinct terminal identifier")
+    ids = ", ".join(_literal(value) for value in (left, center, monitor, notes, top) if value)
     return _resolve_tab(window, tab) + f'''    set existingManagedIds to {{}}
     repeat with managedId in {{{ids}}}
         set targetId to contents of managedId
@@ -384,9 +395,6 @@ tell application {_literal(_APP)}
         {_result(_literal("-"))}
     else
         set centerTerminal to split monitorTerminal direction left with configuration {_configuration(root, command)}
-        if not (perform action "equalize_splits" on centerTerminal) then
-            error "Ghostty could not equalize the dashboard columns."
-        end if
         focus centerTerminal
         {_result("(id of centerTerminal)")}
     end if
@@ -501,3 +509,37 @@ def focus_if_alive(state: Mapping[str, Any]) -> bool:
 def is_alive(state: Mapping[str, Any]) -> bool:
     """Check a recorded dashboard without changing focus or creating surfaces."""
     return _probe(state, activate=False)
+
+
+def resize(state, role, direction, amount):
+    if direction not in ("left", "right", "up", "down") or not isinstance(amount, int) or not 1 <= amount <= 4096:
+        raise ValueError("Invalid resize request")
+    target = _identifier(state["terminals"][role], label="Resize terminal identifier")
+    script = f'''tell application {_literal(_APP)}
+{_ownership_preflight(state)}
+    if dashboardIds does not contain {_literal(target)} then error "Resize target is no longer in the dashboard."
+    perform action {_literal(f"resize_split:{direction},{amount}")} on terminal id {_literal(target)}
+    return "DASHBOARD_RESIZED"
+end tell
+'''
+    if _execute(script).strip() != "DASHBOARD_RESIZED":
+        raise RuntimeError("Could not resize dashboard section")
+
+
+def add_top(state, command, root):
+    left = _identifier(state["terminals"]["left"], label="Files terminal identifier")
+    config = _configuration(_root(root), _text(command, label="Top command"))
+    script = f'''tell application {_literal(_APP)}
+{_ownership_preflight(state)}
+    if dashboardIds does not contain {_literal(left)} then error "Files is no longer in the dashboard."
+    set topTerminal to missing value
+    try
+        set topTerminal to split terminal id {_literal(left)} direction up with configuration {config}
+        return id of topTerminal
+    on error failureMessage number failureNumber
+        if topTerminal is not missing value then close topTerminal
+        error failureMessage number failureNumber
+    end try
+end tell
+'''
+    return _identifier(_execute(script).strip(), label="Created top terminal identifier")

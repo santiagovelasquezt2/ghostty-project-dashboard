@@ -12,3 +12,5 @@ The dashboard invokes separately installed tools and uses Python dependencies. I
 - [AGX process GPU measurement study](https://github.com/Zesty0wl/mac-performance-monitor/blob/main/docs/gpu-tab-design.md): reference for the unprivileged GPU counter access path and its measurement limits.
 
 LazyGit, Yazi, and Herdr inspired discussion of possible layouts but are not required by this implementation.
+
+- [Prettier](https://prettier.io/) provides in-memory preview formatting through its API; its pinned npm dependency retains its upstream license.

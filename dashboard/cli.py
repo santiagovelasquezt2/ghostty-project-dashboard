@@ -41,21 +41,23 @@ Layout
   Your coding programs keep running in the background.
   Run dashboard in your project to return.
 
-Native mode: reopening the coding terminal resets its zoom and column widths.
+Notes / Commits: switch the upper-left section with the button or F3. Notes save automatically.
+Native mode: column widths are remembered to cell precision; font zoom still resets.
 """
 
 
 def status_left() -> str:
     action = "#{?#{==:#{@dashboard_hidden},1},Show,Hide}"
-    label = "#{?#{e|<:#{client_width},36},coding,coding terminal}"
-    return "#[range=user|terminal,bold,fg=#8db8ff,bg=#182330] " + action + " " + label + " #[norange,default] "
+    coding = "#{?#{e|>=:#{client_width},64}," + action + " coding terminal,#{?#{e|>=:#{client_width},31}," + action + " coding,Code}}"
+    notes = "#{?#{==:#{@dashboard_top_mode},notes},Commits,Notes}"
+    return ("#[range=user|terminal,bold,fg=#8db8ff,bg=#182330] " + coding + " #[norange,default] "
+            + "#[range=user|notes,fg=#cccccc,bg=#222222] " + notes + " #[norange,default]")
 
 
 def status_right() -> str:
-    # Narrow native side columns retain the coding-terminal toggle first.
-    # Keep style commas outside conditional expressions: tmux uses commas to
-    # delimit the conditional's alternatives.
-    return "#[range=user|help,fg=#cccccc,bg=#222222]#{?#{e|>=:#{client_width},42}, Help ,}#[norange,default] #{?#{e|>=:#{client_width},42}, ,}#[range=user|leave,fg=#cccccc,bg=#222222]#{?#{e|>=:#{client_width},24}, Leave ,}#[norange,default] "
+    # Budget the whole row: compact labels fit alongside Leave at 24 columns.
+    return ("#[range=user|help,fg=#cccccc,bg=#222222]#{?#{e|>=:#{client_width},64}, Help ,}#[norange,default] "
+            "#[range=user|leave,fg=#cccccc,bg=#222222]#{?#{e|>=:#{client_width},24}, Leave ,}#[norange,default]")
 
 
 def tmux(*args: str, check: bool = True) -> str:
@@ -80,6 +82,7 @@ def tmux_quote(value: str) -> str:
 def config_text() -> str:
     environment = shlex.join(["env", f"DASHBOARD_SOCKET={SOCKET}", f"DASHBOARD_STATE_DIR={STATE}"])
     toggle = environment + " " + command("_toggle", "--session", "#{session_id}")
+    notes_toggle = environment + " " + command("_toggle_notes", "--session", "#{session_id}")
     leave = environment + " " + command("_leave", "--session", "#{session_id}", "--client", "#{client_name}")
     click = environment + " " + command("_status_click", "--session", "#{session_id}", "--control", "#{mouse_status_range}", "--client", "#{client_name}")
     help_text = "Drag borders to resize | F2 or Ctrl-b t: coding terminal | Ctrl-b arrows: focus | Ctrl-b Ctrl-arrows: resize | Ctrl-b d: leave (keeps work running)"
@@ -112,7 +115,7 @@ def config_text() -> str:
         "set -g pane-border-format ' #{pane_title} '",
         "set -g status-position bottom",
         "set -g status-style 'bg=#000000,fg=#b6b6b6'",
-        "set -g status-left-length 40",
+        "set -g status-left-length 100",
         "set -g status-left " + tmux_quote(status_left()),
         "set -g status-right-length 100",
         "set -g status-right " + tmux_quote(status_right()),
@@ -135,6 +138,7 @@ def config_text() -> str:
         f"bind-key '?' display-message {tmux_quote(help_text)}",
         f"bind-key t run-shell -b {tmux_quote(toggle)}",
         f"bind-key -n F2 run-shell -b {tmux_quote(toggle)}",
+        f"bind-key -n F3 run-shell -b {tmux_quote(notes_toggle)}",
         # Keep resize-by-drag; remove every default context menu offering pane moves.
         "bind-key -n MouseDrag1Border resize-pane -M",
         "bind-key -n MouseDown3Pane select-pane -t =",
@@ -183,18 +187,20 @@ def option(session: str, key: str) -> str:
 
 def set_option(session: str, key: str, value: str) -> None:
     tmux("set-option", "-t", session, "@dashboard_" + key, value)
-    if key == "hidden":
+    if key in ("hidden", "notes_hidden", "top_mode"):
         # Grouped views share windows, but session options need synchronizing.
-        for role in ("left", "terminal", "monitor"):
+        for role in ("left", "terminal", "monitor", "notes", "top"):
             view = option(session, "view_" + role)
             if view:
-                tmux("set-option", "-t", view, "@dashboard_hidden", value)
+                tmux("set-option", "-t", view, "@dashboard_" + key, value)
 
 
 def status_click(session: str, control: str, client: str) -> None:
     """Dispatch only the button under the mouse; blank status space is inert."""
     if control == "terminal":
         toggle_terminal(session)
+    elif control == "notes":
+        toggle_notes(session)
     elif control == "help":
         tmux("display-popup", "-c", client, "-E", "-w", "80%", "-h", "70%",
              "-T", "Dashboard controls", command("_help"))
@@ -249,9 +255,13 @@ def run_native_workspace(session: str, *, inside_tmux: bool = False) -> int:
         state = native_workspace.read_state(session)
         if not state or option(session, "backend") != "native" or not native.focus_if_alive(state):
             raise RuntimeError("Run dashboard from a normal Ghostty terminal to open its layout.")
+        from .top_section import ensure_native
+        ensure_native(session)
         return 0
     with marked_origin() as (marker, tty):
         state = native_workspace.open_workspace(session, origin_marker=marker, origin_tty=tty)
+        from .top_section import ensure_native
+        ensure_native(session)
     if state and state.get("launch_mode") == "inplace":
         try:
             return native_workspace.attach_origin(session, state["generation"])
@@ -310,6 +320,11 @@ def create_workspace(root: str, base: str | None, width: int, height: int) -> st
     return name
 
 
+def toggle_notes(session):
+    from .top_section import toggle
+    toggle(session)
+
+
 def toggle_terminal(session: str) -> None:
     session = tmux("display-message", "-p", "-t", session, "#{session_id}")
     session = option(session, "parent") or session
@@ -341,7 +356,7 @@ def toggle_terminal(session: str) -> None:
             tmux("resize-window", "-t", pane, "-x", w, "-y", str(int(h) + 2))
             tmux("select-window", "-t", window)
             width = int(tmux("display-message", "-p", "-t", window, "#{window_width}"))
-            tmux("resize-pane", "-t", option(session, "commits"), "-x", str(width // 2))
+            tmux("resize-pane", "-t", option(session, "files"), "-x", str(width // 2))
             tmux("select-pane", "-t", option(session, "files"))
             set_option(session, "hidden", "1")
         else:
@@ -388,6 +403,17 @@ def main(argv: list[str] | None = None) -> int:
             parser = argparse.ArgumentParser()
             parser.add_argument("--view", choices=["cpu", "gpu", "memory"], default="cpu")
             run_monitor(parser.parse_args(args[1:]).view)
+            return 0
+        if args and args[0] == "_notes":
+            parser = argparse.ArgumentParser()
+            parser.add_argument("--root", required=True)
+            from .notes import NotesApp
+            NotesApp(parser.parse_args(args[1:]).root).run()
+            return 0
+        if args and args[0] == "_toggle_notes":
+            parser = argparse.ArgumentParser()
+            parser.add_argument("--session", required=True)
+            toggle_notes(parser.parse_args(args[1:]).session)
             return 0
         if args and args[0] == "_toggle":
             parser = argparse.ArgumentParser()

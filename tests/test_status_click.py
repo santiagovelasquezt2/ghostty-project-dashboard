@@ -194,6 +194,22 @@ class StatusMouseTests(unittest.TestCase):
                                          "-F", "#{client_name}", check=False))
         self.assert_terminal_preserved()
 
+    def test_footer_labels_remain_separate_across_sizes_and_toggle_states(self):
+        for width in (24, 30, 31, 36, 39, 40, 58, 63, 64, 90, 180):
+            self.screen.resize(self.HEIGHT,width)
+            fcntl.ioctl(self.master_fd,termios.TIOCSWINSZ,struct.pack("HHHH",self.HEIGHT,width,0,0))
+            for hidden in ('0','1'):
+                cli.set_option(self.session,'hidden',hidden)
+                cli.set_option(self.session,'top_mode','commits' if hidden=='1' else 'notes')
+                cli.tmux('refresh-client','-S','-t',self.client)
+                coding=('Show' if hidden=='1' else 'Hide') + (' coding terminal' if width>=64 else ' coding') if width>=31 else 'Code'
+                notes='Notes' if hidden=='1' else 'Commits'
+                self.wait_for(lambda: coding in self.status_row() and notes in self.status_row() and 'Leave' in self.status_row())
+                row=self.status_row()
+                self.assertLess(row.index(coding)+len(coding),row.index(notes))
+                self.assertLess(row.index(notes)+len(notes),row.index('Leave'))
+        self.assert_terminal_preserved()
+
     def test_leave_remains_clickable_in_a_narrow_column(self):
         self.screen.resize(lines=self.HEIGHT, columns=31)
         fcntl.ioctl(self.master_fd, termios.TIOCSWINSZ, struct.pack("HHHH", self.HEIGHT, 31, 0, 0))

@@ -19,9 +19,11 @@ jobs:
         with:
           python-version: "3.13"
       - name: Install terminal tools
-        run: brew install tmux btop uv
+        run: brew install tmux btop uv node
       - name: Install locked development environment
         run: uv sync --locked --extra dev --python 3.13
+      - name: Install preview formatter
+        run: npm ci --prefix formatter --ignore-scripts
       - name: Run isolated tests
         run: uv run --locked --extra dev python -m unittest discover -s tests -v
       - name: Build distribution

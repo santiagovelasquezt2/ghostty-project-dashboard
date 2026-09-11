@@ -6,7 +6,7 @@
 
 The native launcher marks its invoking terminal with a random OSC 2 title, matches that exact title through Ghostty's scripting API, and stores stable surface/tab IDs. A single starting surface becomes the left column; the foreground launcher attaches a tmux client to it. Two new Ghostty surfaces host the center and right columns. If the starting tab already has unrelated splits, a separate dashboard tab is created in the same window.
 
-Ghostty draws independently sized text in each column. tmux keeps processes alive independently of those surfaces. The left column contains two tmux panes; the right column contains a nested resource stack with btop above a Textual process table. The coding column is an ordinary persistent shell.
+Ghostty draws independently sized text in each column. tmux keeps processes alive independently of those surfaces. The left column has separate native surfaces for File Changes and the upper Commits/Notes slot; the right column contains a nested resource stack with btop above a Textual process table. The coding column is an ordinary persistent shell.
 
 Leave closes only the recorded dashboard-created surfaces and detaches the recorded origin client. It returns the original shell. State generations prevent an older foreground launcher from cleaning up a replacement dashboard. Native toggling must preserve those origin/generation fields.
 
@@ -51,7 +51,12 @@ GPU percentages represent execution time divided by elapsed time; they can excee
 ## Important limits
 
 - Native scripting is macOS/Ghostty-specific and currently assumes the standard application location.
-- Ghostty's API cannot read font size or split widths. Recreated center surfaces reset zoom and equalize columns.
-- Native column positions cannot be locked through this scripting API; the two left tmux panes are fixed.
+- Ghostty cannot directly read split widths. `geometry.py` measures tmux client columns × cell pixels and restores each visible combination using bounded native resize actions, with cell-sized tolerance. Font zoom still resets.
+- Native column positions cannot be locked through this scripting API; dashboard toggles preserve the upper/lower positions.
 - Fixed Ghostty titles block origin-marker lookup; failure must never fall back to guessing the frontmost terminal.
 - Unit tests mock native actions. Desktop transitions require the manual acceptance checks.
+
+
+`split_diff.py` aligns each unified-diff hunk into unwrapped before/after columns, pairing removal/addition runs and retaining separate line numbers. It emits measured Rich Text so RichLog can scroll horizontally without wrapping or dropping long code. `panels.py` caches preview text so layout toggles and resizing do not rerun Git or formatting. `notes_keys.py` installs ordinary Ghostty editing bindings through the managed include. Notes handles those keys directly, including Ctrl-A for select-all. No native key table is activated; settings reload clears the retired table and its pill. The mappings apply throughout Ghostty; other terminal apps interpret the same standard editing keys. Undo uses Ctrl-underscore rather than the process-suspending Ctrl-Z. The transport test sends the exact configured bytes through a disposable tmux client and the real Notes editor.
+
+`top_section.py` migrates the old Notes column and detaches the upper pane into a native surface above File Changes. A grouped tmux view owns that slot. Switching Notes/Commits swaps existing panes between that slot and a parked window; neither process restarts. The native top ID is included in ownership checks and Leave cleanup. The lower left surface remains the original terminal so Leave returns to its shell. Migration rollback rejoins the original top pane if creating the native surface fails.

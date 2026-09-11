@@ -8,7 +8,7 @@ version = "1.3.0"
 description = "A fixed, resizable project dashboard for Ghostty"
 readme = "README.md"
 requires-python = ">=3.11"
-dependencies = ["textual==8.2.8"]
+dependencies = ["textual==8.2.8", "pygments==2.21.0"]
 
 [project.optional-dependencies]
 dev = ["pyte==0.8.2"]

@@ -16,7 +16,7 @@ Install [Homebrew](https://brew.sh) first if needed. Follow its displayed shell 
 
 ```sh
 brew install --cask ghostty
-brew install git tmux btop uv
+brew install git tmux btop uv node
 git clone https://github.com/santiagovelasquezt2/ghostty-project-dashboard.git
 cd ghostty-project-dashboard
 uv run --no-project --python 3.13 python install.py
@@ -58,7 +58,7 @@ The `--tmux` option runs all sections in one terminal surface. It avoids native 
 | `~/.local/share/ghostty-project-dashboard/venv` | Runtime Python environment |
 | `~/.local/state/ghostty-dashboard` | Generated tmux/btop settings, locks, and native surface state |
 
-Personal Ghostty settings, `.tmux.conf`, and coding-assistant preferences are not copied or modified. The repository contains the generators for the entire dashboard configuration, so another computer does not need these runtime files from the original installation.
+The installer adds one `config-file` include to the macOS Ghostty config for default Command editing shortcuts. These specific editing combinations are remapped throughout Ghostty; other preferences remain intact. Its prior config is backed up privately under the installed app directory. `.tmux.conf` and coding-assistant preferences are not modified. The repository contains the generators for the entire dashboard configuration, so another computer does not need these runtime files from the original installation.
 
 ## Update
 
@@ -83,4 +83,4 @@ tmux -L ghostty-dashboard-resources kill-server
 
 Those commands terminate all dashboard sessions, not ordinary tmux sessions. A “no server running” message means that server is already stopped.
 
-Then remove the managed launcher and app directory. Verify the launcher still contains `# Managed by Ghostty Project Dashboard` before deleting it, in case you later replaced that command with a different tool. The state directory may also be removed after the sessions are stopped. No global terminal preferences need to be restored.
+Then remove the managed launcher and app directory. Verify the launcher still contains `# Managed by Ghostty Project Dashboard` before deleting it, in case you later replaced that command with a different tool. The state directory may also be removed after the sessions are stopped. Remove the Ghostty Project Dashboard `config-file` include and its preceding comment from the macOS Ghostty config before deleting the app directory, then reload Ghostty settings. Removing the include restores the previous editing bindings.

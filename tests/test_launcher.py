@@ -96,6 +96,11 @@ class OriginTitleTests(unittest.TestCase):
 
 
 class NativeLaunchFlowTests(unittest.TestCase):
+    def setUp(self):
+        migration = patch("dashboard.top_section.ensure_native")
+        migration.start()
+        self.addCleanup(migration.stop)
+
     def test_inplace_launch_restores_title_then_waits_for_attach_and_returns(self) -> None:
         phases = []
         state = {"launch_mode": "inplace", "generation": "generation-123"}

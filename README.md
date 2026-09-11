@@ -4,7 +4,7 @@ One command for a black-background Git workspace, a persistent coding terminal, 
 
 ```text
 ┌───────────────────┬────────────────────┬───────────────────────┐
-│ Branch commits    │                    │ CPU + memory graphs   │
+│ Commits or Notes  │                    │ CPU + memory graphs   │
 │ Count + date/time │ Coding terminal    │                       │
 ├───────────────────┤                    ├───────────────────────┤
 │ Changed-file map  │ Shell / Grok /     │ Processes             │
@@ -19,7 +19,7 @@ Requires **macOS**, **Ghostty 1.3+** in `/Applications/Ghostty.app`, and [Homebr
 
 ```sh
 brew install --cask ghostty
-brew install git tmux btop uv
+brew install git tmux btop uv node
 git clone https://github.com/santiagovelasquezt2/ghostty-project-dashboard.git
 cd ghostty-project-dashboard
 uv run --no-project --python 3.13 python install.py
@@ -43,7 +43,7 @@ From any folder inside a Git project, run:
 dashboard
 ```
 
-The command turns the Ghostty terminal you launch it from into a dashboard with three native columns. It uses that same window. The left contains commit history above the changed-file tree, the center is the **coding terminal** for your normal shell, Grok, OpenCode, or another tool, and the right shows running processes. Each column has its own terminal surface, so clicking the coding terminal and pressing **⌘ + / −** changes only its text size. Borders can be dragged to resize. The two left sections have fixed positions; their pane-moving shortcuts and menus are disabled.
+The command turns the Ghostty terminal you launch it from into a dashboard with three native columns. It uses that same window. The left contains commit history above the changed-file tree, the center is the **coding terminal** for your normal shell, Grok, OpenCode, or another tool, and the right shows running processes. The upper-left Commits/Notes slot and File Changes each have their own terminal surface, as do the coding and process columns, so clicking the coding terminal and pressing **⌘ + / −** changes only its text size. Borders can be dragged to resize. The two left sections stay above and below one another during dashboard toggles.
 
 **Leave** removes the dashboard columns and returns to the original shell and directory, with a clear terminal screen. Your coding session stays running in the background. If the starting tab already contains other splits, the dashboard uses a new tab in that same window and Leave returns to the untouched original tab.
 
@@ -66,23 +66,24 @@ Each commit includes a compact, faded date and time on the right, in your Mac's 
 | Return to a normal terminal, keeping work running | Click **Leave**, or **Ctrl-b**, then **d** |
 | Return to this project's dashboard | Run `dashboard` again |
 | Move focus between sections | Click a section |
-| Resize the two left sections with the keyboard | **Ctrl-b**, then **Ctrl + Up / Down** |
+| Switch the upper-left section | **Notes / Commits**, or **F3** |
+| Resize Notes vertically | **− Height / + Height** in Notes, or drag its bottom border |
 | Show dashboard help | Click **Help** in the bottom bar |
 | Switch file-tree mode | Click **All changes** / **Committed**, or press **a** / **c** in that section |
 | Expand / collapse folders | Click the arrow, or use **Left / Right** |
 | Scroll a large file map | Scroll up/down; use **Shift + scroll** or **Shift + Left / Right** sideways, or drag the scrollbars |
 | View a file's diff or a commit | Select it and click **Open**, or press **Enter** |
-| Return from a diff | Click **Back**, or press **Escape** |
+| Return from a diff | Click **Back**, or press **B** or **Escape** |
 | Refresh the selected Git panel | Click **Refresh**, or press **r** |
-| Switch process view | Click **CPU / GPU / Memory**, or press **c / g / m** there |
+| Switch process view | Click **CPU / GPU / Memory**, or press **a / s / d** there |
 | Filter process names | Click **Filter** or press **/**; **Clear** or **Escape** clears it |
 | Refresh / select a process | Click **Refresh**, **↑**, or **↓** at the bottom of the process view |
 
-On a Mac keyboard, F2 may require the Fn key. The Ctrl-b, t shortcut works without changing macOS keyboard settings. The bottom button updates between Hide and Show, and always controls the same coding terminal regardless of the program running inside it. On narrow columns, its label shortens to **Hide coding / Show coding**. **Leave** remains available from 24 columns wide; **Help** appears from 42 columns. Blank bottom-bar space does nothing when clicked.
+On a Mac keyboard, F2 may require the Fn key. The Ctrl-b, t shortcut works without changing macOS keyboard settings. The bottom button updates between Hide and Show, and always controls the same coding terminal regardless of the program running inside it. On narrow columns, its label shortens to **Hide coding / Show coding**. **Leave** remains available from 24 columns wide; **Notes / Commits** appears beside coding and switches the upper-left slot; F3 works at any width. **Help** appears from 64 columns. Blank bottom-bar space does nothing when clicked.
 
-Hiding the center preserves its running shell and CLI process. Ghostty's current scripting interface cannot read the zoom level or column widths, so restoring the center uses the configured font size and equalizes the columns. Resize or zoom again as needed. If you exit the center shell, press F2 to start it again. Closing or leaving Ghostty does not stop the dashboard's running processes; run `dashboard` in that project to return.
+Hiding the center preserves its running shell and CLI process. Restoring a column remembers viewport proportions for each visible coding/notes combination using tmux cell measurements and Ghostty resize actions. Borders restore to roughly one cell of precision; a resized outer window scales the proportions. Font zoom still resets to the configured size. If you exit the center shell, press F2 to start it again. Closing or leaving Ghostty does not stop the dashboard's running processes; run `dashboard` in that project to return.
 
-Ghostty's own native split controls remain available; its scripting interface cannot lock native column positions. The left commit and file sections remain fixed inside their column. The `--tmux` layout keeps all four positions fixed and restores their saved dimensions, but its text zoom affects the entire surface.
+Ghostty's own native split controls remain available; its scripting interface cannot lock native column positions. Commits/Notes and File Changes are separate native surfaces, so clicking either before using **⌘ + / −** zooms only that section. The `--tmux` layout keeps all four positions fixed and restores their saved dimensions, but its text zoom affects the entire surface.
 
 ## File map and line totals
 
@@ -130,7 +131,7 @@ grok --fullscreen
 
 The dedicated tmux configuration enables full color, clipboard support, focus events, and modern key reporting. Development checks covered Grok 1.0.25's doctor and idle full-screen interface at widths of 60, 80, and 100 columns. Coding tools can change their terminal behavior; verify the version you install. Native Ghostty keyboard and paste behavior still requires a manual check on the target Mac.
 
-The layout starts with equal columns. Enlarge the Ghostty window for comfortable space across all three; the legacy `--tmux` layout requires at least 90 columns and 24 rows when first opened. Ghostty's standard zoom shortcuts act on the focused column. Custom global `all:` zoom bindings in a personal Ghostty configuration would override that behavior; this installer does not change personal bindings.
+The layout starts with equal columns. Enlarge the Ghostty window for comfortable space across all three; the legacy `--tmux` layout requires at least 90 columns and 24 rows when first opened. Ghostty's standard zoom shortcuts act on the focused column. Custom global `all:` zoom bindings in a personal Ghostty configuration would override that behavior; the installer changes only the Command editing combinations documented below.
 
 ## Process monitor
 
@@ -187,3 +188,26 @@ Extremely large results produce an explicit message instead of incomplete totals
 - [Architecture and configuration locations](docs/ARCHITECTURE.md)
 - [Troubleshooting](docs/TROUBLESHOOTING.md)
 - [Upstream tools and references](THIRD_PARTY.md)
+
+Code previews highlight TypeScript/TSX, JavaScript/JSX, HTML, and CSS using the VSCode Modern Black syntax palette. The black background and colored diff markers remain. Added / Modified / Deleted labels beside the line totals explain file colors. Click a process column header (CPU%, RAM, GPU%, or GPU time) to sort highest first; the selected column shows a down arrow. A / S / D switch CPU / GPU / Memory views (M remains a memory alias).
+
+Double-click a process row to open a report with its identity, parent, command, sampled resources, open files, and network connections. Click **Copy** to put the reviewed report on the macOS clipboard. **Escape** or **Close** returns to the process list. Details are collected only on demand; unavailable fields stay explicit. Common credential arguments are redacted, but review the report before sharing. Gray **Unchanged** labels in the file legend refer to neutral folder context.
+
+File previews default to **Formatted**. Click that button to switch to **Original**. Prettier formats both complete versions in memory before comparing them; files and Git totals remain unchanged. Invalid, unsupported, binary, linked, or oversized files fall back to Original with a note. Formatted line numbers are preview positions, not original source positions. Requires Node.js; the installer installs a pinned private Prettier dependency. Contributor setup: `npm ci --prefix formatter --ignore-scripts`.
+
+Modified-file previews show removed lines on dark red and added lines on dark green with surrounding unchanged code. If formatting would hide all changes, the preview shows the original diff instead. **Notes / Commits**, beside the coding toggle, switches the upper-left section. Notes occupies the same space as commits, leaving the full left-column width for File Changes. F3 switches it too. Both views stay running, preserving notes and section dimensions. Each line becomes a bullet; select text and click **Copy** to copy a section, or copy all bullets with no selection. **Paste** inserts clipboard text. Notes save automatically under the dashboard state directory, outside the project, and survive hiding and reopening.
+
+Diff sections use readable **Before: lines … → After: lines …** labels. In formatted previews, these are positions in the formatted versions. Native width restoration has automated measurement/action checks; visual desktop verification is still required on the target Mac.
+
+Notes bullets are visual markers outside the editable text, so Backspace, Delete, selection, undo, and redo behave normally. The **Delete** button removes the current or selected bullets. **− Height / + Height** adjusts the upper section height without dragging the divider; footer controls adapt to narrow widths. An empty note list is genuinely empty, and existing saved bullet files remain compatible.
+
+
+In a file or commit preview, click **Stacked** to switch to **Split**: Before is on the left, After on the right, and unchanged context stays aligned. Click **Split** to return. This works with both formatted and original previews. Code stays unwrapped in both views. Split columns expand to fit their source lines; scroll horizontally to see long lines. The footer wraps its controls when space is tight.
+
+Notes supports **⌘Z** undo, **⌘⇧Z** redo, **⌘A** select all, **⇧Arrow** character selection, and **⌥⇧Left/Right** or **⌘⌥⇧Left/Right** word selection. **⌘⇧Left/Right** selects to the start/end of the current logical line, and **⌘⇧Up/Down** selects to the beginning/end of all notes, across bullets.
+
+Command editing shortcuts are enabled by default through ordinary Ghostty bindings. There is no Enable button, named key table, or persistent pill. After installing an update, reload Ghostty settings once with **⌘⇧,**. Reloading also clears the old notes key table. These editing bindings apply to all Ghostty terminals, including the coding terminal: apps receive their standard editing equivalents (Ctrl-_ for undo, Ctrl-Y for redo, Ctrl-A for select-all in Notes, Shift-Home/End and Ctrl-Shift-Home/End for selection). Other apps decide how those keys behave. Cmd-Z never sends Ctrl-Z, which could suspend a shell program. Copy, paste, zoom, and unrelated bindings are not changed.
+
+Added files always use the full preview width, including when Split is selected. The split preference is retained for modified files; the new-file view keeps code unwrapped and starts at the left edge.
+
+Existing dashboards migrate to the shared upper-left slot when you click **Notes** (or the old notes button), press F3, or run `dashboard` again. This creates the independent upper surface without restarting the coding process.

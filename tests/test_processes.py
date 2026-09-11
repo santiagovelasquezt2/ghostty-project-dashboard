@@ -332,3 +332,34 @@ class ProcessTests(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class NewSortingTests(unittest.IsolatedAsyncioTestCase):
+    async def test_shortcuts_and_numeric_header_sort_persist(self):
+        app = ProcessMonitor(auto_refresh=False)
+        async with app.run_test(size=(65,25)) as pilot:
+            snap = sample()
+            snap.gpu_available = True
+            snap.processes[0].gpu = 90
+            snap.processes[0].gpu_time_ns = 1_000_000
+            snap.processes[1].gpu = 2
+            snap.processes[1].gpu_time_ns = 9_000_000
+            app.apply_snapshot(snap)
+            await pilot.press('s')
+            self.assertEqual(app.metric_name,'gpu')
+            table=app.query_one(DataTable)
+            await pilot.pause()
+            columns = list(table.columns.values())
+            x = sum(column.width + 2 for column in columns[:2]) + 2
+            await pilot.click("#process-table", offset=(x, 0))
+            await pilot.pause()
+            self.assertEqual(app.sort_key, 'gpu_time')
+            self.assertEqual(table.get_row_at(0)[0].pid,200)
+            app.apply_snapshot(snap)
+            self.assertEqual(table.get_row_at(0)[0].pid,200)
+            await pilot.press('m')
+            self.assertEqual(table.get_row_at(0)[0].pid,200)
+            await pilot.press('a')
+            self.assertEqual(table.get_row_at(0)[0].pid,100)
+            await pilot.press('slash','a','s','m')
+            self.assertEqual(app.metric_name,'cpu')
+            self.assertEqual(app.query_one(Input).value,'asm')

@@ -13,7 +13,7 @@ from rich.style import Style
 from textual import events, on, work
 from textual.app import App, ComposeResult
 from textual.binding import Binding
-from textual.containers import Horizontal
+from textual.containers import Horizontal, Grid
 from textual.widgets import Button, RichLog, Static, Tree
 from textual.widgets.tree import TreeNode
 
@@ -137,7 +137,7 @@ def file_label(change: Any, name: str | None = None) -> Text:
     return label
 
 
-def totals_text(changes: list[Any] | tuple[Any, ...]) -> Text:
+def totals_text(changes: list[Any] | tuple[Any, ...], width: int = 0) -> Text:
     added = sum(item.added for item in changes)
     deleted = sum(item.deleted for item in changes)
     result = Text()
@@ -145,26 +145,22 @@ def totals_text(changes: list[Any] | tuple[Any, ...]) -> Text:
     result.append(" ")
     result.append(f" −{deleted:,} ", style=f"bold {RED} on #3b222b")
     result.append(f"  {len(changes)} files", style=MUTED)
+    result.append(" " * max(3, width - result.cell_len - len("Added · Modified · Deleted · Unchanged")))
+    result.append("Added", style=GREEN)
+    result.append(" · ", style=MUTED)
+    result.append("Modified", style=BLUE)
+    result.append(" · ", style=MUTED)
+    result.append("Deleted", style=RED)
+    result.append(" · ", style=MUTED)
+    result.append("Unchanged", style=NEUTRAL)
     return result
 
 
-def diff_text(raw: str) -> Text:
-    """Render a bounded diff as literal text, never interpreting Git as markup."""
-    result = Text(no_wrap=True, overflow="ignore")
-    # The Git layer also bounds output, but keep the view safe for other callers.
+def diff_text(raw: str, path: str | None = None) -> Text:
+    from .highlighting import highlight_diff
     lines = gitdata.safe_text(raw).splitlines()
-    for line in lines[:10000]:
-        if line.startswith(("diff --git", "index ", "--- ", "+++ ")):
-            style = MUTED
-        elif line.startswith("+"):
-            style = GREEN
-        elif line.startswith("-"):
-            style = RED
-        elif line.startswith("@@"):
-            style = BLUE
-        else:
-            style = NEUTRAL
-        result.append(line[:3000] + (" …" if len(line) > 3000 else "") + "\n", style)
+    bounded = [line[:3000] + (" …" if len(line) > 3000 else "") for line in lines[:10000]]
+    result = highlight_diff(bounded, path, (GREEN, RED, BLUE, MUTED, NEUTRAL))
     if len(lines) > 10000:
         result.append("\nPreview truncated after 10,000 lines.\n", style=MUTED)
     return result
@@ -204,9 +200,10 @@ class DashboardPanel(App[None]):
     #empty { height: 1fr; margin: 1; color: #999999; }
     #preview { height: 1fr; padding: 0 1; margin-top: 1;
         background: #000000; }
-    #actions { height: 1; padding: 0 1; background: #080808; }
-    #actions Button { height: 1; min-width: 0; width: auto;
-        padding: 0 1; margin: 0 1 0 0; border: none;
+    #actions { grid-size: 4 1; grid-columns: 1fr 1fr 1fr 1fr; grid-rows: 1; height: 1; padding: 0 1; background: #080808; }
+    #actions.narrow { height: 2; grid-size: 2 2; grid-columns: 1fr 1fr; grid-rows: 1 1; }
+    #actions Button { height: 1; min-width: 0; width: 1fr;
+        padding: 0; margin: 0; border: none; text-wrap: nowrap; text-overflow: ellipsis;
         background: #202020; color: #b6b6b6; text-style: none; }
     #actions Button:hover { background: #3a3a3a; color: #ffffff; }
     #actions Button:disabled { background: #101010; color: #606060; }
@@ -215,6 +212,7 @@ class DashboardPanel(App[None]):
         Binding("a", "all_changes", "All changes", show=False),
         Binding("c", "committed", "Committed", show=False),
         Binding("escape", "back", "Back", show=False),
+        Binding("b", "back", "Back", show=False),
         Binding("r", "refresh_data", "Refresh", show=False),
     ]
 
@@ -237,6 +235,10 @@ class DashboardPanel(App[None]):
         self.current_snapshot: Any = None
         self._signature: Any = None
         self._refresh_running = False
+        self.formatted_preview = True
+        self.split_preview = False
+        self._preview_raw = None
+        self._preview_path = None
         self._preview_open = False
         self._preview_entry: Entry | None = None
         self._preview_generation = 0
@@ -254,17 +256,18 @@ class DashboardPanel(App[None]):
         tree.guide_depth = 2
         tree.show_guides = self.kind == "files"
         tree.show_root = self.kind == "files"
-        if self.kind == "files":
-            tree.tooltip = "Scroll up/down · Shift + scroll or Shift + Left/Right to scroll sideways"
         yield tree
         yield Static("Reading project…", id="empty", markup=False)
         yield RichLog(min_width=1, max_lines=10002, wrap=False, markup=False,
                       highlight=False, auto_scroll=False, id="preview")
-        with Horizontal(id="actions"):
+        with Grid(id="actions"):
             yield PanelActionButton("Open", id="open-entry", tooltip="Open selected item · Enter")
+            yield PanelActionButton("Formatted", id="format-preview", tooltip="Toggle formatted / original preview")
+            yield PanelActionButton("Stacked", id="split-preview", tooltip="Toggle stacked / side-by-side diff")
             yield PanelActionButton("Refresh", id="refresh", tooltip="Refresh this view · R")
 
     def on_mount(self) -> None:
+        self.query_one("#actions").set_class(self.size.width < 48, "narrow")
         self.query_one("#modes").display = self.kind == "files"
         self.query_one("#totals").display = self.kind == "files"
         self.query_one("#preview").display = False
@@ -275,9 +278,14 @@ class DashboardPanel(App[None]):
             self.set_interval(2, self.reload_data)
 
     def _update_controls(self) -> None:
+        self.query_one("#split-preview").display = self._preview_open
+        split_button = self.query_one("#split-preview", Button)
+        split_button.disabled = self._is_added_preview()
+        split_button.label = "New file" if split_button.disabled else ("Split" if self.split_preview else "Stacked")
+        self.query_one("#format-preview").display = self._preview_open and self.kind == "files"
         button = self.query_one("#open-entry", Button)
         button.label = "Back" if self._preview_open else "Open"
-        button.tooltip = "Back to the list · Esc" if self._preview_open else "Open selected item · Enter"
+        button.tooltip = "Back to the list · B / Esc" if self._preview_open else "Open selected item · Enter"
         node = self.query_one(ProjectTree).cursor_node
         can_open = node is not None and (
             bool(node.children) or (node.data is not None and (
@@ -292,6 +300,9 @@ class DashboardPanel(App[None]):
         # Keep both mode buttons reachable when the user makes the pane narrow.
         if self.is_mounted:
             self.query_one("#all", Button).label = "All" if event.size.width < 31 else "All changes"
+            self.query_one("#actions").set_class(event.size.width < 48, "narrow")
+            if self._preview_open and self.split_preview:
+                self.call_after_refresh(self.render_preview)
 
     @work(group="snapshot", exit_on_error=False)
     async def reload_data(self, *, refresh_preview: bool = False) -> None:
@@ -309,6 +320,7 @@ class DashboardPanel(App[None]):
                     change = next((item for item in changes if item.path == entry.key), entry.change)
                     entry = Entry(entry.key, change=change)
                     self._preview_entry = entry
+                self._preview_raw = None
                 self._preview_generation += 1
                 self.load_preview(entry, result, self.committed, self._preview_generation)
         except Exception as exc:
@@ -348,7 +360,7 @@ class DashboardPanel(App[None]):
         if self.kind == "files":
             self.query_one("#totals", Static).update(
                 Text("Totals unavailable · refresh failed", style=RED)
-                if snap.error else totals_text(changes)
+                if snap.error else totals_text(changes, self.size.width - 2)
             )
         error = str(snap.error) if snap.error else None
         if error:
@@ -474,6 +486,7 @@ class DashboardPanel(App[None]):
             return
         self._preview_open = True
         self._preview_entry = entry
+        self._preview_raw = None
         self._preview_generation += 1
         self.query_one("#content").display = False
         self.query_one("#empty").display = False
@@ -487,6 +500,14 @@ class DashboardPanel(App[None]):
         self._update_controls()
         self.load_preview(entry, self.current_snapshot, self.committed, self._preview_generation)
 
+    @on(Button.Pressed, "#format-preview")
+    def toggle_preview_format(self) -> None:
+        self.formatted_preview = not self.formatted_preview
+        self.query_one("#format-preview", Button).label = "Formatted" if self.formatted_preview else "Original"
+        if self._preview_entry and self.current_snapshot:
+            self._preview_generation += 1
+            self.load_preview(self._preview_entry, self.current_snapshot, self.committed, self._preview_generation)
+
     @work(group="preview", exclusive=True, exit_on_error=False)
     async def load_preview(self, entry: Entry, snap: Any, committed: bool, generation: int) -> None:
         try:
@@ -496,16 +517,52 @@ class DashboardPanel(App[None]):
                     gitdata.file_diff, snap.root, snap.base_sha, change.path,
                     committed=committed, head=snap.head, old_path=change.old_path,
                 )
+                if self.formatted_preview:
+                    from .formatting import formatted_diff
+                    try:
+                        raw = await asyncio.to_thread(formatted_diff, snap.root, snap.base_sha, change.path,
+                            committed=committed, head=snap.head, old_path=change.old_path)
+                        raw = "Formatted preview · display only; line numbers reflect formatting.\n" + raw
+                    except Exception:
+                        raw = "Original preview · formatting unavailable for this file.\n" + raw
             else:
                 raw = await asyncio.to_thread(gitdata.commit_diff, snap.root, entry.commit.sha)
-            rendered = diff_text(raw) if raw.strip() else Text("No text diff (the file may be binary).", style=MUTED)
+            error = None
         except Exception as exc:
-            rendered = Text("Unable to read diff: " + gitdata.display_path(str(exc)), style=RED)
+            raw = ""
+            error = Text("Unable to read diff: " + gitdata.display_path(str(exc)), style=RED)
         if self._preview_open and generation == self._preview_generation:
             preview = self.query_one("#preview", RichLog)
-            preview.clear()
-            preview.write(rendered)
+            self._preview_raw = raw
+            self._preview_path = entry.change.path if entry.change else None
+            self.render_preview()
+            if error:
+                preview.clear(); preview.write(error)
             preview.scroll_home(animate=False)
+
+    @on(Button.Pressed, "#split-preview")
+    def toggle_split_preview(self) -> None:
+        self.split_preview = not self.split_preview
+        self.query_one("#split-preview", Button).label = "Split" if self.split_preview else "Stacked"
+        self.render_preview()
+
+    def _is_added_preview(self) -> bool:
+        return bool(self._preview_entry and self._preview_entry.change
+                    and self._preview_entry.change.status == "A")
+
+    def render_preview(self) -> None:
+        if not self._preview_open or self._preview_raw is None:
+            return
+        from .split_diff import split_diff
+        preview = self.query_one("#preview", RichLog)
+        scroll = preview.scroll_offset
+        raw = self._preview_raw
+        self._update_controls()
+        rendered = (split_diff(raw, self._preview_path, max(1, preview.size.width-3))
+                    if self.split_preview and not self._is_added_preview() else diff_text(raw, self._preview_path))
+        preview.clear()
+        preview.write(rendered if raw.strip() else Text("No text diff (the file may be binary).", style=MUTED))
+        preview.scroll_to(x=scroll.x, y=scroll.y, animate=False)
 
     def action_back(self) -> None:
         if not self._preview_open:

@@ -23,3 +23,5 @@ work/
 *.log
 *.sock
 *-native.json
+
+node_modules/

@@ -3,3 +3,5 @@ brew "git"
 brew "tmux"
 brew "btop"
 brew "uv"
+
+brew "node"

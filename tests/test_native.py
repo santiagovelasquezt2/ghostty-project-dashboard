@@ -26,6 +26,16 @@ TAB_STATE = dict(STATE, origin={"tab_id": "origin-tab", "terminal_id": "origin-t
 
 
 class NativeTests(unittest.TestCase):
+    def test_top_script_splits_only_owned_files_surface(self):
+        with patch.object(native, "_execute", return_value="top-id") as execute:
+            self.assertEqual(native.add_top(INPLACE_STATE, "/bin/sleep 600", "/tmp"), "top-id")
+        script = execute.call_args.args[0]
+        self.assertIn('split terminal id "left-id" direction up', script)
+        self.assertIn("existingManagedIds", script)
+        self.assertNotIn("front window", script)
+        self.assertIn("close topTerminal", script)
+
+
     def test_origin_launch_matches_unique_title_without_focus_or_directory_guess(self):
         script = native.build_launch_script("/tmp/project", COMMANDS, "dashboard-origin-unique")
         self.assertIn('if name of candidateTerminal is "dashboard-origin-unique"', script)

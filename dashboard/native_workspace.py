@@ -46,6 +46,8 @@ def _persist_state(session: str, state: dict) -> None:
 def write_state(session: str, state: dict) -> None:
     _persist_state(session, state)
     cli.set_option(session, "hidden", "1" if state["hidden"] else "0")
+    visible = (cli.option(session,"top_mode")=="notes") if state.get("terminals",{}).get("top") else bool(state.get("terminals",{}).get("notes"))
+    cli.set_option(session, "notes_hidden", "0" if visible else "1")
 
 
 def attach_commands(session: str) -> dict[str, str]:
@@ -112,11 +114,14 @@ def restore_tmux(session: str, *, restore_hidden: bool = False) -> None:
     center = cli.option(session, "terminal")
     # The controller owns the same windows, so removing its view sessions cannot
     # kill pane processes. Kill only the three sessions recorded by this app.
-    for role in ROLES:
+    for role in (*ROLES, "top"):
         view = cli.option(session, "view_" + role)
         if view:
             cli.tmux("kill-session", "-t", view, check=False)
             cli.set_option(session, "view_" + role, "")
+    top = cli.option(session, "top") or cli.option(session,"commits")
+    if cli.tmux("display-message","-p","-t",top,"#{window_id}") != left:
+        cli.tmux("join-pane","-d","-v","-b","-s",top,"-t",files)
     # select-layout assigns saved geometry in current pane order. Restore the
     # original commits/files/terminal/monitor order before applying that layout;
     # joining both panes beside commits would put the terminal under commits.
@@ -257,6 +262,58 @@ def toggle_center(session: str) -> None:
             if not state["hidden"]:
                 native.focus_if_alive(state)
                 return
-        updated = {**state, **native.toggle(state, attach_commands(session)["terminal"],
-                                          cli.option(session, "root"))}
+        from . import geometry
+        state = geometry.capture(session, state)
+        surrogate = {**state, "terminals": dict(state["terminals"])}
+        if state["terminals"].get("notes"):
+            surrogate["terminals"]["monitor"] = state["terminals"]["notes"]
+            surrogate["terminals"].pop("notes", None)
+        result = native.toggle(surrogate, attach_commands(session)["terminal"], cli.option(session, "root"))
+        updated = {**state, "window_id": result["window_id"], "tab_id": result["tab_id"], "hidden": result["hidden"],
+                   "terminals": {**state["terminals"], "terminal": result["terminals"]["terminal"]}}
         write_state(session, updated)
+        geometry.restore(session, updated)
+
+
+def prepare_notes(session):
+    pane = cli.option(session, "notes")
+    if pane and cli.tmux("display-message", "-p", "-t", pane, "#{pane_id}", check=False) == pane:
+        if cli.tmux("display-message", "-p", "-t", pane, "#{pane_dead}") == "1":
+            cli.tmux("respawn-pane", "-t", pane)
+        return pane
+    pane = cli.tmux("new-window", "-d", "-t", session, "-n", "dashboard-notes", "-P", "-F", "#{pane_id}",
+                    cli.command("_notes", "--root", cli.option(session, "root")))
+    cli.set_option(session, "notes", pane)
+    return pane
+
+
+def toggle_notes(session):
+    from . import native, geometry
+    session = controller(session)
+    with cli.locked(session + "-native"):
+        state = read_state(session)
+        if state is None:
+            raise RuntimeError("Run dashboard again to open its Ghostty window.")
+        pane = prepare_notes(session)
+        view = cli.option(session, "view_notes")
+        if not view:
+            view = cli.session_name(cli.option(session,"root")) + "-notes"
+            cli.tmux("new-session", "-d", "-t", session, "-s", view)
+            cli.set_option(session,"view_notes",view)
+            cli.set_option(view,"parent",session)
+            cli.set_option(view,"role","notes")
+            window = cli.tmux("display-message","-p","-t",pane,"#{window_id}")
+            cli.tmux("select-window","-t",view+":"+window)
+            cli.tmux("set-option","-t",view,"status","off")
+            cli.tmux("set-option","-w","-t",pane,"pane-border-status","off")
+        command = shlex.join(["/usr/bin/env","-u","TMUX","-u","TMUX_PANE","-u","NO_COLOR", "COLORTERM=truecolor",
+                              shutil.which("tmux") or "tmux","-L",cli.SOCKET,"attach-session","-t",view])
+        state = geometry.capture(session,state)
+        surrogate = {**state, "terminals": {**state["terminals"], "terminal":state["terminals"].get("notes","")}}
+        surrogate["terminals"].pop("notes",None)
+        result = native.toggle(surrogate,command,cli.option(session,"root"))
+        updated = {**state,"window_id":result["window_id"],"tab_id":result["tab_id"],
+                   "terminals":{**state["terminals"],"notes":result["terminals"]["terminal"]}}
+        write_state(session,updated)
+        cli.set_option(session,"notes_hidden","1" if result["hidden"] else "0")
+        geometry.restore(session,updated)
