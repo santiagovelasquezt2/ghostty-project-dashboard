@@ -67,7 +67,7 @@ Each commit includes a compact, faded date and time on the right, in your Mac's 
 | Return to this project's dashboard | Run `dashboard` again |
 | Move focus between sections | Click a section |
 | Switch the upper-left section | **Notes / Commits**, or **F3** |
-| Resize Notes vertically | **− Height / + Height** in Notes, or drag its bottom border |
+| Resize Notes vertically | Drag its bottom border |
 | Show dashboard help | Click **Help** in the bottom bar |
 | Switch file-tree mode | Click **All changes** / **Committed**, or press **a** / **c** in that section |
 | Expand / collapse folders | Click the arrow, or use **Left / Right** |
@@ -195,11 +195,11 @@ Double-click a process row to open a report with its identity, parent, command, 
 
 File previews default to **Formatted**. Click that button to switch to **Original**. Prettier formats both complete versions in memory before comparing them; files and Git totals remain unchanged. Invalid, unsupported, binary, linked, or oversized files fall back to Original with a note. Formatted line numbers are preview positions, not original source positions. Requires Node.js; the installer installs a pinned private Prettier dependency. Contributor setup: `npm ci --prefix formatter --ignore-scripts`.
 
-Modified-file previews show removed lines on dark red and added lines on dark green with surrounding unchanged code. If formatting would hide all changes, the preview shows the original diff instead. **Notes / Commits**, beside the coding toggle, switches the upper-left section. Notes occupies the same space as commits, leaving the full left-column width for File Changes. F3 switches it too. Both views stay running, preserving notes and section dimensions. Each line becomes a bullet; select text and click **Copy** to copy a section, or copy all bullets with no selection. **Paste** inserts clipboard text. Notes save automatically under the dashboard state directory, outside the project, and survive hiding and reopening.
+Modified-file previews show removed lines on dark red and added lines on dark green with surrounding unchanged code. If formatting would hide all changes, the preview shows the original diff instead. **Notes / Commits**, beside the coding toggle, switches the upper-left section. Notes occupies the same space as commits, leaving the full left-column width for File Changes. F3 switches it too. Both views stay running, preserving notes and section dimensions. Each line becomes a bullet; use keyboard selection, copy, paste, and delete to edit your notes. Notes save automatically under the dashboard state directory, outside the project, and survive hiding and reopening.
 
 Diff sections use readable **Before: lines … → After: lines …** labels. In formatted previews, these are positions in the formatted versions. Native width restoration has automated measurement/action checks; visual desktop verification is still required on the target Mac.
 
-Notes bullets are visual markers outside the editable text, so Backspace, Delete, selection, undo, and redo behave normally. The **Delete** button removes the current or selected bullets. **− Height / + Height** adjusts the upper section height without dragging the divider; footer controls adapt to narrow widths. An empty note list is genuinely empty, and existing saved bullet files remain compatible.
+Notes bullets are visual markers outside the editable text, so Backspace, Delete, selection, undo, and redo behave normally. The editor uses the full section below its save status, with no action or height toolbar. Drag the divider to resize it. An empty note list is genuinely empty, and existing saved bullet files remain compatible.
 
 
 In a file or commit preview, click **Stacked** to switch to **Split**: Before is on the left, After on the right, and unchanged context stays aligned. Click **Split** to return. This works with both formatted and original previews. Code stays unwrapped in both views. Split columns expand to fit their source lines; scroll horizontally to see long lines. The footer wraps its controls when space is tight.
