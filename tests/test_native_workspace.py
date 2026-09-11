@@ -148,6 +148,28 @@ class NativeWorkspaceTests(unittest.TestCase):
         self.assertEqual(before, self.pane_processes())
         self.assertEqual(layout, self.geometry())
 
+    def test_top_rollback_repairs_tmux_reversed_layout_assignment(self):
+        from dashboard import top_section
+        workspace.prepare(self.session)
+        workspace.write_state(self.session, self.native_state())
+        before, layout = self.pane_processes(), self.geometry()
+        actual_tmux = cli.tmux
+
+        def reversed_assignment(*args, **kwargs):
+            result = actual_tmux(*args, **kwargs)
+            if args[0] == "select-layout":
+                top = self.roles["commits"]
+                files = self.roles["files"]
+                if int(actual_tmux("display-message", "-p", "-t", top, "#{pane_top}")) < int(actual_tmux("display-message", "-p", "-t", files, "#{pane_top}")):
+                    actual_tmux("swap-pane", "-d", "-s", top, "-t", files)
+            return result
+
+        with patch.object(native, "add_top", side_effect=RuntimeError("mock failure")), patch.object(cli, "tmux", side_effect=reversed_assignment):
+            with self.assertRaisesRegex(RuntimeError, "mock failure"):
+                top_section.ensure_native(self.session)
+        self.assertEqual(before, self.pane_processes())
+        self.assertEqual(layout, self.geometry())
+
     def test_tmux_notes_swap_preserves_slot_size_and_coding_toggle(self):
         from dashboard import top_section
         before = self.pane_processes()

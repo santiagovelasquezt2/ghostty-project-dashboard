@@ -24,7 +24,9 @@ class NotesTransportTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory); state=root/'editor.json'
             script=root/'fixture.py'
-            script.write_text('''import json,sys
+            script.write_text('''import json,sys,time
+# Exercise slow startup deterministically instead of depending on runner speed.
+time.sleep(.25)
 from pathlib import Path
 from dashboard.notes import NotesApp
 from textual.widgets import TextArea
@@ -46,10 +48,19 @@ Fixture('/tmp/fixture').run()
             socket='dashboard-notes-test-'+uuid.uuid4().hex[:12]
             config=root/'tmux.conf';config.write_text(cli.config_text())
             env=os.environ.copy();env.pop('TMUX',None);env.pop('TMUX_PANE',None)
-            env.update(TERM='xterm-256color',DASHBOARD_STATE_DIR=str(root),PYTHONPATH=str(Path.cwd()))
+            env.update(TERM='xterm-256color',DASHBOARD_STATE_DIR=str(root),PYTHONPATH=str(Path(__file__).resolve().parents[1]))
             import shlex
             command=shlex.join([sys.executable,str(script),str(state)])
             subprocess.run(['tmux','-L',socket,'-f',str(config),'new-session','-d','-s','notes','-x','80','-y','24',command],env=env,check=True)
+            # Do not answer the outer terminal's device queries until Textual
+            # has entered raw input mode. Otherwise replies can become editor
+            # text when the fixture starts slowly on a fresh runner.
+            deadline=time.monotonic()+10
+            while not state.exists():
+                if time.monotonic()>=deadline:
+                    subprocess.run(['tmux','-L',socket,'kill-server'],capture_output=True)
+                    self.fail('Notes fixture did not finish mounting')
+                time.sleep(.02)
             pid,master=pty.fork()
             if pid==0:
                 fcntl.ioctl(0,termios.TIOCSWINSZ,struct.pack('HHHH',24,80,0,0))

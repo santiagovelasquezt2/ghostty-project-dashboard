@@ -39,6 +39,12 @@ def ensure_native(session):
             if same:
                 cli.tmux('join-pane','-d','-v','-b','-s',pane,'-t',files)
                 cli.tmux('select-layout','-t',files,layout)
+                # tmux versions differ in how saved layout cells are assigned
+                # after rejoining a pane. Keep the original upper/lower roles.
+                top_y=int(cli.tmux('display-message','-p','-t',pane,'#{pane_top}'))
+                files_y=int(cli.tmux('display-message','-p','-t',files,'#{pane_top}'))
+                if top_y > files_y:
+                    cli.tmux('swap-pane','-d','-s',pane,'-t',files)
             raise
         updated={**state,'terminals':{**state['terminals'],'top':top}}
         workspace.write_state(session,updated)
