@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ghostty-project-dashboard"
+version = "1.3.0"
+description = "A fixed, resizable project dashboard for Ghostty"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = ["textual==8.2.8"]
+
+[project.optional-dependencies]
+dev = ["pyte==0.8.2"]
+
+[project.urls]
+Repository = "https://github.com/santiagovelasquezt2/ghostty-project-dashboard"
+Issues = "https://github.com/santiagovelasquezt2/ghostty-project-dashboard/issues"
+
+[project.scripts]
+dashboard = "dashboard.cli:main"
+
+[tool.setuptools]
+packages = ["dashboard"]

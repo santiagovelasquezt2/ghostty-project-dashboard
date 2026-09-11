@@ -1,0 +1,5 @@
+cask "ghostty"
+brew "git"
+brew "tmux"
+brew "btop"
+brew "uv"

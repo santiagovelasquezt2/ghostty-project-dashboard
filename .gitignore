@@ -1,0 +1,25 @@
+# Local Python environments and build output
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Personal settings, secrets, runtime state, and local QA artifacts
+.env
+.env.*
+!.env.example
+.DS_Store
+.idea/
+.vscode/
+work/
+.dashboard-state/
+*.log
+*.sock
+*-native.json
